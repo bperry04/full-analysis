@@ -2,6 +2,7 @@ import React from "react";
 import type { RunState } from "../api";
 import { Card, ProvBadge, Section, Table } from "../components";
 import { date, pct } from "../fmt";
+import { ImpactTag } from "./Horizon";
 
 export function Events({ s }: { s: RunState }) {
   const e = s.data.events;
@@ -17,7 +18,7 @@ export function Events({ s }: { s: RunState }) {
               <li key={i}>
                 <span className="mono">{date(x.date)}</span>
                 <span className="mono dim">+{x.days_until}d</span>
-                <span><span className="imp" title={`importance ${x.importance}`}><span style={{ display: "block", height: "100%", width: `${x.importance * 20}%`, background: x.importance >= 4 ? "var(--red)" : x.importance >= 3 ? "var(--amber)" : "var(--blue)" }} /></span> {x.label}{x.confirmed ? "" : <span className="dim"> (est.)</span>}{x.detail?.historical_mean_abs_move ? <span className="dim small"> · avg move {pct(x.detail.historical_mean_abs_move, 1, false)}</span> : null}{x.detail?.consensus ? <span className="dim small"> · consensus {x.detail.consensus}, prev {x.detail.previous}</span> : null}</span>
+                <span><span className="imp" title={`importance ${x.importance}`}><span style={{ display: "block", height: "100%", width: `${x.importance * 20}%`, background: x.importance >= 4 ? "var(--red)" : x.importance >= 3 ? "var(--amber)" : "var(--blue)" }} /></span> {x.label}{x.confirmed ? "" : <span className="dim"> (est.)</span>}{x.detail?.historical_mean_abs_move ? <span className="dim small"> · avg move {pct(x.detail.historical_mean_abs_move, 1, false)}</span> : null}{x.detail?.consensus ? <span className="dim small"> · consensus {x.detail.consensus}, prev {x.detail.previous}</span> : null}<div><ImpactTag imp={x.impact} />{x.impact?.why ? <span className="dim small"> — {x.impact.why}</span> : null}</div></span>
               </li>
             ))}
           </ul>

@@ -60,6 +60,39 @@ fa/pipeline sections · orchestrator (SSE progress) · scheduler
 fa/api     FastAPI        web/   Vite + React        tests/   pytest
 ```
 
+## Research notes (what the scoring draws on)
+
+The factor library is a heuristic composite, not a backtest — but the factors were chosen from published, replicated
+anomalies rather than intuition. The main additions from the literature review (September 2026):
+
+| Horizon | Factor | Evidence |
+|---|---|---|
+| Long (1y+) | Gross profitability (GP / assets) | Novy-Marx (2013): gross profits predict returns as strongly as book-to-market, and better than earnings |
+| Long | Asset growth (negative) | Cooper, Gulen & Schill (2008): fast balance-sheet growth predicts weak returns |
+| Long | Accruals / cash conversion (negative), net payout, dividend growth streak | Sloan (1996); Boudoukh et al. (2007) |
+| Long | Low-volatility anomaly | Baker, Bradley & Wurgler (2011): lower-vol names earn better risk-adjusted returns |
+| Medium (1m–1y) | Post-earnings-announcement drift | Ball & Brown (1968); Bernard & Thomas (1989) — "the granddaddy of underreaction", ~60-day drift |
+| Medium | EPS estimate revisions and trend | Analysts revise slowly; the revision direction persists for months (Chan, Jegadeesh & Lakonishok 1996) |
+| Medium | 12-1 momentum, 52-week-high proximity | Jegadeesh & Titman (1993); George & Hwang (2004) |
+| Medium | Consensus shift, target dispersion | Rating-change drift; wide dispersion = less reliable consensus (Diether, Malloy & Scherbina 2002) |
+| Short (0–30d) | Short-term reversal | Jegadeesh (1990), Lehmann (1990): 1-week moves beyond ±2σ partially reverse |
+| Short | Turn-of-month, own-stock month seasonality | Lakonishok & Smidt (1988); Heston & Sadka (2008) — turn-of-month survives costs |
+| Short | Overnight vs intraday split | Lou, Polk & Skouras (2019): return "tug of war"; informational only after spreads |
+| Short | Liquidity (dollar volume), IV rank, OI change, gamma exposure, OPEX pinning | Ni, Pearson & Poteshman (2005) on expiration pinning; dealer-hedging literature |
+| Events | Macro release impact labels | Above-consensus inflation hurts long-duration growth and helps bank NII; employment surprises move rates most (Gürkaynak, Sack & Swanson 2005) |
+
+Impact labels on events are **conditional** ("above consensus: negative for this stock") and come from this stock's
+measured betas to TLT / UUP / USO / HYG / SPY plus its profile (bank, REIT, high-growth …); the print itself is unknown.
+
+## Exports
+
+- **Valuation → Excel** (`/api/ticker/{s}/valuation.xlsx`): an *Inputs* sheet with named cells drives DCF (Gordon + exit
+  multiple), a WACC × g sensitivity grid, bear/base/bull scenarios, EPV / DDM / justified P/E / P/B / Graham / PEG /
+  residual income, comps and historical multiples, and the profile-weighted blend — every cell is a live formula.
+- **Technicals → Excel** (`/api/ticker/{s}/technicals.xlsx?overlays=…&panes=…`): a contiguous *Bars* table (date, OHLCV,
+  the indicators currently selected in the UI) so *select all → Insert chart* reproduces the chart; native Excel charts
+  are also pre-built on the *Charts* sheet.
+
 ## Tests
 
 ```powershell

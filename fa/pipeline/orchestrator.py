@@ -41,6 +41,7 @@ STAGES: list[list[tuple[str, Callable[[S.Run], Awaitable[dict]], float]]] = [
      ("ownership", S.ownership, 90), ("shorts", S.shorts, 90), ("news", S.news, 90), ("social", S.social, 90)],
     [("risk", S.risk, 60), ("options", S.options, 240), ("flow", S.orderflow, 120), ("events", S.events, 120)],
     [("valuation", S.valuation, 240), ("narrative", S.narrative, 60)],
+    [("impact", S.impact, 30)],
 ]
 
 RUNS: dict[str, "AnalysisRun"] = {}

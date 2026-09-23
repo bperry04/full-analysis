@@ -26,6 +26,7 @@ TICKER_MAP = "ticker_map"             # {} SEC ticker->cik
 EARNINGS_DATES = "earnings_dates"
 ANALYST_RECS = "analyst_recs"
 ANALYST_TARGETS = "analyst_targets"
+ANALYST_ESTIMATES = "analyst_estimates"   # {symbol} EPS/revenue estimates, revisions, trend
 INSIDER_TXNS = "insider_txns"
 INSTITUTIONAL_HOLDERS = "institutional_holders"
 # --- shorts ---

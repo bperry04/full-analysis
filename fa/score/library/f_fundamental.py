@@ -297,6 +297,8 @@ def target_upside(ctx):
 def actions(ctx):
     a = ctx.s("analysts", "recent_actions")
     if not a or (a.get("upgrades", 0) + a.get("downgrades", 0)) == 0:
+        if ctx.s("analysts", "consensus") is not None:
+            return mk("", "", "", 0.0, 0.0, unit="score", narrative="no upgrades or downgrades in the last 90 days (see consensus shift / revisions)", inputs=[InputRef("recent_actions", a, "", ctx.p("analysts"))], confidence=0.3)
         return None
     up, dn = a["upgrades"], a["downgrades"]
     v = (up - dn) / (up + dn)

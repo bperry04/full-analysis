@@ -37,6 +37,7 @@ from fa.compute.valuation import models as VM
 from fa.compute.valuation import montecarlo as MC
 from fa.core.errors import AllRoutesFailed
 from fa.core.provenance import Ledger
+from fa.core.settings import get_settings
 from fa.core.types import Q, val
 from fa.registry import needs as N
 from fa.registry.router import Result, Router
@@ -94,6 +95,11 @@ async def profile(run: Run) -> dict[str, Any]:
     }
     run.ctx.prov["profile"] = prof.p if prof else (filings.p if filings else None)
     run.ctx.objects["cik"] = meta.get("cik")
+    if get_settings().auto_watch:
+        try:
+            repos.add_watch(run.symbol, "auto: analysed")   # so the daily close-snapshot job accrues chain / IV / bar history
+        except Exception:
+            pass
     run.ctx.objects["name"] = out["name"]
     run.ctx.objects["sector"] = out["sector"]
     if filings:
@@ -319,7 +325,7 @@ async def options(run: Run) -> dict[str, Any]:
     rk = ranks.iv_rank(hist, iv30)
     daily = run.ctx.objects.get("daily")
     ivrv = ranks.iv_vs_rv(daily["close"], iv30) if daily is not None else {}
-    prev = repos.chain_snapshot(run.symbol, which="prev")
+    prev = repos.chain_snapshot_prev_distinct(run.symbol, g.assign(dt=str(date.today())))
     hist_pc = repos.iv_surface_history(run.symbol, 120)
     fl = flow.flow_summary(g, prev, spot, hist_pc["put_call_vol"] if len(hist_pc) else None)
     mp = exposure.max_pain(g)
@@ -424,12 +430,68 @@ async def analysts(run: Run) -> dict[str, Any]:
             out["actions"] = a.sort_values("date", ascending=False).head(40)
     if tg:
         out["targets"] = dict(tg.data)
+        t = tg.data
+        if t.get("mean") and t.get("high") and t.get("low"):
+            out["target_dispersion"] = (t["high"] - t["low"]) / t["mean"]
     if ed:
         out["earnings_history"] = ed.data.head(16)
         run.ctx.objects["earnings_df"] = ed.data
         run.ctx.objects["earnings_meta"] = getattr(ed, "meta", None)
+        # post-earnings-announcement drift inputs: last reported surprise and how long ago
+        past = ed.data[ed.data["eps_reported"].notna()] if "eps_reported" in ed.data.columns else pd.DataFrame()
+        if len(past):
+            last = past.iloc[0]
+            lts = pd.Timestamp(last["ts"])
+            lts = lts.tz_localize("UTC") if lts.tzinfo is None else lts.tz_convert("UTC")
+            out["last_surprise"] = {"date": str(lts.date()), "eps_estimate": _fl(last.get("eps_estimate")), "eps_reported": _fl(last.get("eps_reported")),
+                                    "surprise_pct": _fl(last.get("surprise_pct")), "days_ago": int((pd.Timestamp.now(tz="UTC") - lts).days)}
+    # consensus shift (this month vs 1-3 months ago) — works for every covered ticker even when no upgrade/downgrade rows exist
+    trend = out.get("consensus_trend")
+    if isinstance(trend, pd.DataFrame) and len(trend) >= 2 and "strongBuy" in trend.columns:
+        def score_row(r):
+            n = sum(int(r.get(k, 0) or 0) for k in ("strongBuy", "buy", "hold", "sell", "strongSell"))
+            return ((2 * int(r.get("strongBuy", 0) or 0) + int(r.get("buy", 0) or 0) - int(r.get("sell", 0) or 0) - 2 * int(r.get("strongSell", 0) or 0)) / (2 * n)) if n else None
+        now_s, prev_s = score_row(trend.iloc[0]), score_row(trend.iloc[min(len(trend) - 1, 2)])
+        if now_s is not None and prev_s is not None:
+            out["consensus_shift"] = {"now": now_s, "prior": prev_s, "delta": now_s - prev_s, "periods": int(len(trend))}
+    # EPS estimate revisions and trend (Yahoo)
+    est = await run.try_fetch(N.ANALYST_ESTIMATES)
+    if est:
+        d = est.data
+        rev, tr = d.get("eps_revisions"), d.get("eps_trend")
+        try:
+            def cell(df, row, col):
+                # yfinance returns periods (0q, +1q, 0y, +1y) as the index and metrics as columns; column names vary in case
+                if not isinstance(df, pd.DataFrame) or df.empty or row not in df.index:
+                    return None
+                cols = {c.lower(): c for c in df.columns}
+                c = cols.get(col.lower())
+                return _fl(df.loc[row, c]) if c else None
+            if isinstance(rev, pd.DataFrame) and not rev.empty:
+                out["eps_revisions"] = {"up_30d": cell(rev, "0q", "upLast30days"), "down_30d": cell(rev, "0q", "downLast30days"), "up_7d": cell(rev, "0q", "upLast7days"), "down_7d": cell(rev, "0q", "downLast7days"),
+                                        "next_q_up_30d": cell(rev, "+1q", "upLast30days"), "next_q_down_30d": cell(rev, "+1q", "downLast30days"),
+                                        "fy_up_30d": cell(rev, "0y", "upLast30days"), "fy_down_30d": cell(rev, "0y", "downLast30days")}
+            if isinstance(tr, pd.DataFrame) and not tr.empty:
+                cur, ago30, ago90 = cell(tr, "0y", "current"), cell(tr, "0y", "30daysAgo"), cell(tr, "0y", "90daysAgo")
+                qcur, q90 = cell(tr, "0q", "current"), cell(tr, "0q", "90daysAgo")
+                out["eps_trend"] = {"current_fy": cur, "30d_ago": ago30, "90d_ago": ago90, "chg_90d": (cur / ago90 - 1) if cur and ago90 else None, "chg_30d": (cur / ago30 - 1) if cur and ago30 else None,
+                                    "current_q": qcur, "q_chg_90d": (qcur / q90 - 1) if qcur and q90 else None}
+            ee = d.get("earnings_estimate")
+            if isinstance(ee, pd.DataFrame) and not ee.empty:
+                out["earnings_estimate"] = ee
+            out["estimates_prov_id"] = est.p
+        except Exception as e:
+            log.debug("estimates parse failed: %s", e)
     out["consensus_history"] = repos.analyst_consensus_history(run.symbol)
     return out
+
+
+def _fl(v):
+    try:
+        f = float(v)
+        return None if f != f else f
+    except (TypeError, ValueError):
+        return None
 
 
 async def ownership(run: Run) -> dict[str, Any]:
@@ -478,6 +540,27 @@ async def news(run: Run) -> dict[str, Any]:
     out = SN.analyze(r.data, symbol=run.symbol, name=run.ctx.objects.get("name"))
     out["prov_id"] = r.p
     run.ctx.prov["news"] = r.p
+    # news-volume anomaly from our own lake once it spans two weeks (the scheduled sweep stores every story we see)
+    if out.get("news_volume_z") is None:
+        try:
+            from fa.store import lake
+            hist = lake.read_partitions("news", {})
+            if not hist.empty and "symbol" in hist.columns:
+                h = hist[hist["symbol"] == run.symbol].copy()
+                h["day"] = pd.to_datetime(h["dt"]).dt.date
+                daily = h.groupby("day")["id"].nunique()
+                if len(daily) >= 14:
+                    idx = pd.date_range(end=pd.Timestamp.today().normalize(), periods=56).date
+                    s = daily.reindex(idx).fillna(0)
+                    weekly = s.groupby([i // 7 for i in range(len(s))]).sum()      # 8 weekly buckets, last = this week
+                    recent, prior = float(weekly.iloc[-1]), weekly.iloc[:-1]
+                    prior = prior[prior > 0]
+                    if len(prior) >= 3:
+                        med = float(prior.median()); mad = float((prior - med).abs().median()) or max(med * 0.5, 1.0)
+                        out["news_volume_z"] = float(max(min((recent - med) / (1.4826 * mad), 4.0), -4.0))
+                        out["news_volume_source"] = f"lake history ({len(daily)} days): {recent:.0f} stories this week vs median {med:.0f}/week"
+        except Exception as e:
+            log.debug("lake news volume failed: %s", e)
     return out
 
 
@@ -522,6 +605,63 @@ async def events(run: Run) -> dict[str, Any]:
     except Exception:
         pass
     return out
+
+
+# ---------------------------------------------------------------------------- impact labels (needs risk + events + narrative)
+async def impact(run: Run) -> dict[str, Any]:
+    from fa.compute.events import impact as IM
+    secs = run.ctx.sections
+    sens = (secs.get("risk") or {}).get("sensitivity") or {}
+    tags = ((secs.get("valuation") or {}).get("profile") or {}).get("tags") or []
+    beta = ((secs.get("risk") or {}).get("beta_weekly_2y") or {}).get("beta_adjusted")
+    channels = IM.stock_channels(sens, tags, beta)
+    ev = secs.get("events") or {}
+    opts = secs.get("options") or {}
+    ctx = {"implied_move": ((opts.get("expected_move") or {}).get("earnings") or {}).get("implied_move_pct"),
+           "hist_move": ((opts.get("expected_move") or {}).get("realized_earnings") or {}).get("mean_abs_move_pct"), "max_pain": (opts.get("max_pain") or {}).get("max_pain")}
+    n_lab = 0
+    for e in ev.get("events") or []:
+        lab = IM.company_event_impact(e, ctx) if e.get("type") != "macro" else None
+        if lab is None:
+            lab = IM.macro_event_impact(e.get("label", ""), channels, int(e.get("importance") or 1))
+        if lab:
+            e["impact"] = lab
+            n_lab += 1
+    nar = secs.get("narrative") or {}
+    for h in ("long", "medium", "short"):
+        for it in nar.get(h) or []:
+            it["impact"] = IM.narrative_impact(it)
+    # extra 2-20 day context: seasonality and overnight/intraday split for the swing factors
+    daily = run.ctx.objects.get("daily")
+    extra: dict[str, Any] = {}
+    if daily is not None and len(daily) > 300:
+        d = daily.copy()
+        d["ts"] = pd.to_datetime(d["ts"], utc=True)
+        d["ret"] = d["close"].astype(float).pct_change()
+        d["month"] = d["ts"].dt.month
+        this_m = int(pd.Timestamp.utcnow().month)
+        by_m = d.groupby("month")["ret"].agg(["mean", "count"])
+        if this_m in by_m.index and by_m.loc[this_m, "count"] >= 40:
+            extra["month_avg_daily_ret"] = float(by_m.loc[this_m, "mean"])
+            extra["month_hit_rate"] = float((d[d["month"] == this_m].groupby(d["ts"].dt.year)["ret"].sum() > 0).mean())
+        d["dom"] = d["ts"].dt.day
+        tom = d[(d["dom"] >= 28) | (d["dom"] <= 3)]["ret"].mean()
+        rest = d[(d["dom"] > 3) & (d["dom"] < 28)]["ret"].mean()
+        extra["turn_of_month_edge"] = float(tom - rest) if pd.notna(tom) and pd.notna(rest) else None
+        extra["in_turn_of_month"] = bool(pd.Timestamp.utcnow().day >= 28 or pd.Timestamp.utcnow().day <= 3)
+        o = d["open"].astype(float); c = d["close"].astype(float)
+        overnight = (o / c.shift(1) - 1).tail(120)
+        intraday = (c / o - 1).tail(120)
+        extra["overnight_ret_120d"] = float(overnight.sum()); extra["intraday_ret_120d"] = float(intraday.sum())
+        r5 = float(c.iloc[-1] / c.iloc[-6] - 1) if len(c) > 6 else None
+        r5_hist = (c / c.shift(5) - 1).dropna().tail(504)
+        extra["r5_z"] = float((r5 - r5_hist.mean()) / r5_hist.std()) if r5 is not None and r5_hist.std() else None
+        dv = float((c * daily["volume"].astype(float)).tail(20).mean())
+        extra["dollar_volume_20d"] = dv
+    tech = secs.get("technicals")
+    if isinstance(tech, dict):
+        tech["swing_extra"] = extra
+    return {"channels": channels, "n_events_labelled": n_lab, "prov_id": run.ctx.prov.get("events")}
 
 
 # ---------------------------------------------------------------------------- narrative (qualitative drivers)

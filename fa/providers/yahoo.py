@@ -50,6 +50,7 @@ class Yahoo(Provider):
             N.EARNINGS_DATES: self.earnings_dates,
             N.ANALYST_RECS: self.analyst_recs,
             N.ANALYST_TARGETS: self.analyst_targets,
+            N.ANALYST_ESTIMATES: self.analyst_estimates,
             N.INSIDER_TXNS: self.insider_txns,
             N.INSTITUTIONAL_HOLDERS: self.institutional_holders,
             N.SHORT_INTEREST: self.short_interest,
@@ -230,6 +231,23 @@ class Yahoo(Provider):
         if not d:
             raise NoData(self.name, "no targets")
         return Payload(d, f"yfinance.Ticker({symbol}).analyst_price_targets", latency=Latency.EOD)
+
+    async def analyst_estimates(self, symbol: str, **_: Any) -> Payload:
+        """EPS / revenue estimates for current+next quarter/year, EPS revisions (last 7/30 days) and EPS trend (now vs 7/30/60/90d ago)."""
+        def _f():
+            t = _tk(symbol)
+            out = {}
+            for k in ("earnings_estimate", "revenue_estimate", "eps_trend", "eps_revisions", "growth_estimates"):
+                try:
+                    v = getattr(t, k)
+                    out[k] = v if isinstance(v, pd.DataFrame) else pd.DataFrame()
+                except Exception:
+                    out[k] = pd.DataFrame()
+            return out
+        d = await asyncio.to_thread(_f)
+        if all(v.empty for v in d.values()):
+            raise NoData(self.name, "no estimates")
+        return Payload(d, f"yfinance.Ticker({symbol}).eps_trend/eps_revisions/earnings_estimate", row_count=sum(len(v) for v in d.values()), latency=Latency.EOD)
 
     async def insider_txns(self, symbol: str, **_: Any) -> Payload:
         df = await asyncio.to_thread(lambda: _tk(symbol).insider_transactions)

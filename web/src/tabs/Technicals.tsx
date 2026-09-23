@@ -112,7 +112,7 @@ export function Technicals({ s }: { s: RunState }) {
   return (
     <Section name="technicals" status={s.sections.technicals}>
       <div className="grid" style={{ gap: 12 }}>
-        <Card title="Chart" sub={<><div className="toggle">{avail.map((i) => <button key={i} className={iv === i ? "on" : ""} onClick={() => setIv(i)}>{i}</button>)}</div> <ProvBadge p={cur?.prov_id} /> {cur?.n_bars} bars · <a style={{ cursor: "pointer" }} onClick={() => setShowPicker(!showPicker)}>{showPicker ? "hide" : "choose indicators"}</a></>}>
+        <Card title="Chart" sub={<><div className="toggle">{avail.map((i) => <button key={i} className={iv === i ? "on" : ""} onClick={() => setIv(i)}>{i}</button>)}</div> <ProvBadge p={cur?.prov_id} /> {cur?.n_bars} bars · <a style={{ cursor: "pointer" }} onClick={() => setShowPicker(!showPicker)}>{showPicker ? "hide" : "choose indicators"}</a> · <a href={`/api/ticker/${s.symbol}/technicals.xlsx?overlays=${encodeURIComponent(OVERLAYS.filter((o) => ovSel.includes(o.key)).flatMap((o) => o.cols).join(","))}&panes=${encodeURIComponent(PANES.filter((p) => paneSel.includes(p.key)).map((p) => p.cols.join(",")).join("|"))}`}>⬇ Excel (data + charts)</a></>}>
           {showPicker ? (
             <div className="grid g3" style={{ marginBottom: 8 }}>
               <div><div className="muted small" style={{ marginBottom: 4 }}>Overlays on the price chart (daily only)</div>{OVERLAYS.map((o) => <label key={o.key} className="small" style={{ display: "block", cursor: "pointer" }}><input type="checkbox" checked={ovSel.includes(o.key)} onChange={() => toggle(ovSel, setOvSel, o.key)} /> <i style={{ display: "inline-block", width: 10, height: 3, background: o.color, verticalAlign: "middle", marginRight: 4 }} />{o.label}</label>)}</div>

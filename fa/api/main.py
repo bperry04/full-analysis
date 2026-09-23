@@ -226,24 +226,17 @@ async def dcf_recompute(symbol: str, req: DcfReq):
               "run_id": res["run_id"]})
 
 
-@app.get("/api/ticker/{symbol}/options/evaluate")
-async def options_evaluate(symbol: str, right: str = "C", expiry: str | None = None, horizon: str = "short", hold_days: int | None = None, target: float | None = None,
-                           direction: int | None = None):
-    """Rank every liquid contract of one expiry for a holding period, using the latest run's stock setup as the thesis."""
-    from datetime import date as _date
-    from fa.compute.options import evaluate as EVL
+async def _evaluate_context(symbol: str, direction: int | None = None) -> dict[str, Any]:
+    """Everything the option evaluator needs: greeks-filled chain, spot, vol context and the latest run's stock thesis."""
     from fa.compute.options import pricing, ranks
     from fa.core.provenance import Ledger
     from fa.registry import needs as N
     sym = symbol.upper()
     res = _latest(sym) or {}
     led = Ledger("evaluate")
-    try:
-        ch = await get_router().fetch(N.OPTION_CHAIN, led, symbol=sym)
-        chain = ch.data
-        q = await get_router().fetch(N.QUOTE, led, symbol=sym)
-    except Exception as e:
-        return J({"available": False, "reason": f"could not load the option chain: {type(e).__name__}: {str(e)[:200]}"})
+    ch = await get_router().fetch(N.OPTION_CHAIN, led, symbol=sym)
+    q = await get_router().fetch(N.QUOTE, led, symbol=sym)
+    chain = ch.data
     spot = q.data.get("price") or float(chain["underlying_price"].dropna().iloc[0])
     rf = 0.04
     try:
@@ -258,24 +251,81 @@ async def options_evaluate(symbol: str, right: str = "C", expiry: str | None = N
     daily = repos.ohlcv(sym, "1d")
     hv20 = ranks.realized_vol(daily["close"], 20) if not daily.empty else None
     opts = res.get("options") or {}
-    iv_atm = ((opts.get("surface") or {}).get("atm_iv") or {}).get("d30")
-    iv_rank = (opts.get("ranks") or {}).get("iv_rank")
     setup = ((res.get("technicals") or {}).get("patterns") or {}).get("setup") or {}
-    dirn = direction if direction is not None else int(setup.get("direction") or 0)
-    quality = float(setup.get("quality") or 0.0)
-    dte_earn = (res.get("events") or {}).get("days_to_earnings")
-    expiries = sorted({str(e) for e in g["expiry"].astype(str).unique()})
-    exp = expiry or EVL.suggest_expiry(expiries, horizon, _date.today())
+    return {
+        "sym": sym, "res": res, "chain": g, "spot": spot, "rf": rf, "dy": dy, "hv20": hv20, "iv_atm": ((opts.get("surface") or {}).get("atm_iv") or {}).get("d30"),
+        "iv_rank": (opts.get("ranks") or {}).get("iv_rank"), "setup": setup, "direction": direction if direction is not None else int(setup.get("direction") or 0),
+        "quality": float(setup.get("quality") or 0.0), "dte_earn": (res.get("events") or {}).get("days_to_earnings"),
+        "expiries": sorted({str(e) for e in g["expiry"].astype(str).unique()}),
+        "context": {"hv20": hv20, "iv_atm30": ((opts.get("surface") or {}).get("atm_iv") or {}).get("d30"), "iv_rank": (opts.get("ranks") or {}).get("iv_rank"),
+                    "days_to_earnings": (res.get("events") or {}).get("days_to_earnings"), "rf": rf, "dividend_yield": dy, "quote_provider": q.provider,
+                    "chain_provider": ch.provider, "chain_latency": str(ch.prov.latency), "run_id": res.get("run_id")},
+    }
+
+
+@app.get("/api/ticker/{symbol}/options/evaluate")
+async def options_evaluate(symbol: str, right: str = "C", expiry: str | None = None, horizon: str = "short", hold_days: int | None = None, target: float | None = None,
+                           direction: int | None = None):
+    """Rank every liquid contract of one expiry for a holding period, using the latest run's stock setup as the thesis."""
+    from datetime import date as _date
+    from fa.compute.options import evaluate as EVL
     try:
-        out = EVL.evaluate(g, spot, exp, right, horizon, hold_days, target, dirn, quality, iv_atm, hv20, dte_earn, rf, dy, iv_rank)
+        c = await _evaluate_context(symbol, direction)
+    except Exception as e:
+        return J({"available": False, "reason": f"could not load the option chain: {type(e).__name__}: {str(e)[:200]}"})
+    exp = expiry or EVL.suggest_expiry(c["expiries"], horizon, _date.today())
+    try:
+        out = EVL.evaluate(c["chain"], c["spot"], exp, right, horizon, hold_days, target, c["direction"], c["quality"], c["iv_atm"], c["hv20"], c["dte_earn"], c["rf"], c["dy"], c["iv_rank"])
     except Exception as e:
         log.exception("option evaluate failed")
-        return J({"available": False, "reason": f"evaluation failed: {type(e).__name__}: {str(e)[:200]}", "expiries": expiries})
-    out["expiries"] = expiries
-    out["setup"] = {"setup": setup.get("setup"), "direction": setup.get("direction"), "quality": setup.get("quality"), "trend": setup.get("trend")}
-    out["context"] = {"hv20": hv20, "iv_atm30": iv_atm, "iv_rank": iv_rank, "days_to_earnings": dte_earn, "rf": rf, "dividend_yield": dy, "quote_provider": q.provider, "chain_provider": ch.provider,
-                      "chain_latency": str(ch.prov.latency), "run_id": res.get("run_id")}
+        return J({"available": False, "reason": f"evaluation failed: {type(e).__name__}: {str(e)[:200]}", "expiries": c["expiries"]})
+    s = c["setup"]
+    out["expiries"] = c["expiries"]
+    out["setup"] = {"setup": s.get("setup"), "direction": s.get("direction"), "quality": s.get("quality"), "trend": s.get("trend")}
+    out["context"] = c["context"]
     return J(out)
+
+
+@app.get("/api/ticker/{symbol}/options/evaluate/top")
+async def options_top(symbol: str, horizon: str = "short", dte_min: int = 20, dte_max: int = 30, n: int = 3, hold_days: int | None = None, target: float | None = None,
+                      direction: int | None = None):
+    """Best N contracts across every expiry in the DTE window (calls and puts), ranked by the evaluator's score."""
+    from fa.compute.options import evaluate as EVL
+    try:
+        c = await _evaluate_context(symbol, direction)
+        out = EVL.top_contracts(c["chain"], c["spot"], dte_min, dte_max, n, horizon=horizon, hold_days=hold_days, target=target, direction=c["direction"], quality=c["quality"],
+                                iv_atm=c["iv_atm"], hv20=c["hv20"], days_to_earnings=c["dte_earn"], rf=c["rf"], q=c["dy"], iv_rank=c["iv_rank"])
+    except Exception as e:
+        log.exception("option top failed")
+        return J({"available": False, "reason": f"{type(e).__name__}: {str(e)[:200]}"})
+    s = c["setup"]
+    out["setup"] = {"setup": s.get("setup"), "direction": s.get("direction"), "quality": s.get("quality"), "trend": s.get("trend")}
+    out["context"] = c["context"]
+    return J(out)
+
+
+@app.get("/api/ticker/{symbol}/valuation.xlsx")
+async def valuation_xlsx(symbol: str):
+    from fa.report.excel import valuation_workbook
+    res = _latest(symbol)
+    if res is None:
+        raise HTTPException(404, "no completed run for symbol")
+    data = valuation_workbook(res)
+    return Response(content=data, media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    headers={"Content-Disposition": f'attachment; filename="{symbol.upper()}_valuation_models.xlsx"'})
+
+
+@app.get("/api/ticker/{symbol}/technicals.xlsx")
+async def technicals_xlsx(symbol: str, overlays: str = "sma_50,sma_200", panes: str = "rsi_14|macd,macd_signal,macd_hist"):
+    from fa.report.excel import technicals_workbook
+    res = _latest(symbol)
+    if res is None:
+        raise HTTPException(404, "no completed run for symbol")
+    ov = [c for c in overlays.split(",") if c]
+    pn = [[c for c in grp.split(",") if c] for grp in panes.split("|") if grp]
+    data = technicals_workbook(res, ov, pn)
+    return Response(content=data, media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    headers={"Content-Disposition": f'attachment; filename="{symbol.upper()}_technicals.xlsx"'})
 
 
 # ---------------------------------------------------------------------------- provenance / raw

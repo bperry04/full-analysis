@@ -97,6 +97,8 @@ def news_m(ctx):
 def news_vol(ctx):
     z = ctx.s("news", "news_volume_z")
     if z is None:
+        if ctx.s("news", "n_stories") is not None:
+            return mk("", "", "", 0.0, 0.0, unit="", narrative="not enough stored history yet to judge volume (accrues from the news sweep)", inputs=[InputRef("news_volume_z", None, "", ctx.p("news"))], confidence=0.2)
         return None
     # attention spikes are risk (either direction); mild is fine
     return mk("", "", "", z, -min(abs(z), 4) / 4 * 0.6, unit="", narrative=f"news volume {z:+.1f}σ vs prior week", inputs=[InputRef("news_volume_z", z, "", ctx.p("news"))], confidence=0.5)
@@ -118,6 +120,9 @@ def reddit(ctx):
     z = ctx.s("social", "reddit", "mention_z")
     s = ctx.s("social", "reddit", "sentiment")
     if z is None:
+        from fa.core.settings import get_settings
+        if not get_settings().reddit_client_id:
+            return mk("", "", "", None, None, narrative="Reddit API credentials not set (FA_REDDIT_CLIENT_ID / SECRET in .env)", status="MISSING")
         return None
     return mk("", "", "", z, scaled(s or 0, 0.3) * 0.5 - min(abs(z), 4) / 4 * 0.3, unit="", narrative=f"mentions {z:+.1f}σ vs prior 2 weeks, sentiment {s:+.2f}", inputs=[InputRef("mention_z", z, "", ctx.p("social"))], confidence=0.4)
 

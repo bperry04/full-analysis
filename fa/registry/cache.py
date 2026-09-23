@@ -35,6 +35,7 @@ TTL: dict[str, tuple[int, int]] = {
     N.EARNINGS_DATES: (6 * 3600, 6 * 3600),
     N.ANALYST_RECS: (6 * 3600, 6 * 3600),
     N.ANALYST_TARGETS: (6 * 3600, 6 * 3600),
+    N.ANALYST_ESTIMATES: (6 * 3600, 6 * 3600),
     N.INSIDER_TXNS: (6 * 3600, 6 * 3600),
     N.INSTITUTIONAL_HOLDERS: (24 * 3600, 24 * 3600),
     N.SHORT_INTEREST: (12 * 3600, 12 * 3600),

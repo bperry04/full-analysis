@@ -51,6 +51,30 @@ def chain_snapshot(symbol: str, dt: str | None = None, which: str = "last") -> p
     return df
 
 
+def chain_snapshot_prev_distinct(symbol: str, latest: pd.DataFrame, max_days: int = 7) -> pd.DataFrame:
+    """Most recent prior-day snapshot whose open interest actually differs from `latest` (the delayed feed refreshes OI once
+    a day, so a same-day or not-yet-refreshed snapshot would show a spurious zero change)."""
+    snaps = lake.list_snapshots("options_snap", {"symbol": symbol.upper()})
+    if not snaps or latest is None or latest.empty or "contract_symbol" not in latest.columns:
+        return pd.DataFrame()
+    by_day: dict[str, list] = {}
+    for p in snaps:
+        by_day.setdefault(p.parent.name.split("=")[-1], []).append(p)
+    days = sorted(by_day)
+    cur = latest[["contract_symbol", "open_interest"]].drop_duplicates("contract_symbol").set_index("contract_symbol")["open_interest"]
+    today = str(latest["dt"].iloc[0]) if "dt" in latest.columns else days[-1]
+    for d in [x for x in reversed(days) if x < today][:max_days]:
+        df = pd.read_parquet(sorted(by_day[d])[-1])
+        if "contract_symbol" not in df.columns:
+            continue
+        prev = df.drop_duplicates("contract_symbol").set_index("contract_symbol")["open_interest"]
+        common = cur.index.intersection(prev.index)
+        if len(common) and (cur.loc[common].fillna(0) != prev.loc[common].fillna(0)).any():
+            df["dt"] = d
+            return df
+    return pd.DataFrame()
+
+
 def iv_surface_history(symbol: str, days: int = 400) -> pd.DataFrame:
     return duck.q("SELECT * FROM iv_surface_daily WHERE symbol=? AND dt >= ? ORDER BY dt",
                   [symbol.upper(), date.today() - timedelta(days=days)])

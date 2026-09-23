@@ -49,6 +49,7 @@ class Settings(BaseSettings):
     # Behaviour
     require_realtime: bool = False        # fail loudly instead of degrading to delayed data
     store_strict: bool = True             # API refuses to start if another process owns the DuckDB file (set 0 for a second, read-only-ish instance)
+    auto_watch: bool = True               # every analysed ticker joins the watchlist so its chain/IV/bars history accrues daily
     http_timeout_s: float = 30.0
     default_depth: str = "standard"       # quick | standard | deep
 

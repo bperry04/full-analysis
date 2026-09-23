@@ -93,10 +93,11 @@ def gamma(ctx):
 def oi_chg(ctx):
     c, p = ctx.s("options", "flow", "oi_change_calls"), ctx.s("options", "flow", "oi_change_puts")
     if c is None or p is None:
-        return mk("", "", "", None, None, narrative="needs two snapshots (accrues from tomorrow)", status="MISSING")
+        snaps = ctx.s("options", "snapshots") or []
+        return mk("", "", "", None, None, narrative=f"first chain snapshot for this ticker was stored today ({len(snaps)} on file) — OI change is available from the next trading day", status="MISSING")
     tot = abs(c) + abs(p)
     if not tot:
-        return None
+        return mk("", "", "", 0.0, 0.0, unit="pct", narrative="open interest unchanged vs the prior stored snapshot (the delayed feed refreshes OI once a day)", inputs=[InputRef("oi_change_calls", c, "", ctx.p("options"))], confidence=0.3)
     r = (c - p) / tot
     return mk("", "", "", r, scaled(r, 0.5), unit="pct", narrative=f"OI Δ calls {c:+,.0f} / puts {p:+,.0f} vs prior snapshot", inputs=[InputRef("oi_change_calls", c, "", ctx.p("options")), InputRef("oi_change_puts", p, "", ctx.p("options"))], confidence=0.6)
 

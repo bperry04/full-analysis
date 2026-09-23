@@ -53,6 +53,7 @@ export function Valuation({ s }: { s: RunState }) {
       <div className="grid" style={{ gap: 12 }}>
         {!dcfOk ? <div className="err"><b>DCF not computed:</b> {v.dcf?.reason || "unknown"} — edit the assumptions below and press Recompute to force a valuation.</div> : null}
         {dcfOk && v.dcf?.flags?.includes("ESTIMATED") ? <div className="banner"><b>Estimated DCF.</b> {v.dcf.notes?.join(" ")}</div> : null}
+        <div><a href={`/api/ticker/${s.symbol}/valuation.xlsx`} className="pill ok" style={{ textDecoration: "none" }}>⬇ Download all models as Excel (live formulas)</a> <span className="dim small">Inputs sheet drives every model; yellow cells are editable.</span></div>
         {re ? <div className="banner">Showing your recomputed DCF (overrides marked <i>user_override</i>). The blend, Monte Carlo and comps still reflect the original run. <a style={{ cursor: "pointer" }} onClick={() => { setRe(null); setOv({}); }}>reset</a></div> : null}
         <div className="grid g3">
           <Card title="Fair value blend" sub={<ProvBadge p={v0.prov_id} />}>

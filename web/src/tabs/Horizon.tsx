@@ -4,6 +4,19 @@ import { Bars, Card, Drivers, Gauge, Section, Table } from "../components";
 import { date, num, pct, rows, usd, x } from "../fmt";
 import { OptionEvaluator } from "./OptionEvaluator";
 import { SwingPanel } from "./Technicals";
+import { TopContracts } from "./TopContracts";
+
+export function ImpactTag({ imp }: { imp: any }) {
+  if (!imp) return null;
+  const col = (v: string) => (v?.includes("positive") ? "pos" : v?.includes("negative") ? "neg" : "dim");
+  if (imp.verdict) return <span className={`pill ${col(imp.verdict)}`} title={imp.why} style={{ marginLeft: 6 }}>{imp.verdict}</span>;
+  return (
+    <span className="small" title={`${imp.why}\n${(imp.channels || []).join("; ")}\n${imp.note || ""}`} style={{ marginLeft: 6 }}>
+      <span className="dim">{imp.strong_means ? "above consensus:" : "if strong:"}</span> <span className={col(imp.if_strong)}>{imp.if_strong}</span> <span className="dim">· {imp.weak_means ? "below consensus:" : "if weak:"}</span> <span className={col(imp.if_weak)}>{imp.if_weak}</span>
+      {imp.magnitude != null ? <span className="dim"> · impact {Math.round(imp.magnitude * 100)}%</span> : null}
+    </span>
+  );
+}
 
 const KIND_COLOR: Record<string, string> = { "m&a": "var(--purple)", capacity: "var(--cyan)", strategy: "var(--blue)", capital_return: "var(--green)", demand: "var(--cyan)", product: "var(--blue)", contract: "var(--green)",
   guidance: "var(--amber)", financing: "var(--red)", legal: "var(--red)", management: "var(--amber)", macro: "var(--amber)", earnings: "var(--cyan)", analyst: "var(--muted)", stock_move: "var(--muted)", other: "var(--dim)" };
@@ -17,6 +30,7 @@ export function Narrative({ items, n = 8 }: { items: any[]; n?: number }) {
           <span className="pill" style={{ borderColor: KIND_COLOR[it.kind] || "var(--line)", color: KIND_COLOR[it.kind] || "var(--muted)", marginRight: 6 }}>{it.label}</span>
           {it.url ? <a href={it.url} target="_blank" rel="noreferrer">{it.title}</a> : <span>{it.title}</span>}
           {it.sentiment != null ? <span className={`mono small ${it.sentiment > 0.2 ? "pos" : it.sentiment < -0.2 ? "neg" : "dim"}`}> {it.sentiment > 0 ? "+" : ""}{Number(it.sentiment).toFixed(2)}</span> : null}
+          <ImpactTag imp={it.impact} />
           <div className="dim small">{it.detail ? it.detail + " · " : ""}{it.source} · {date(it.date)}</div>
         </li>
       ))}
@@ -61,6 +75,7 @@ export function Horizon({ s, h }: { s: RunState; h: "short" | "medium" | "long" 
       {h === "short" ? (
         <>
           <Section name="technicals" status={s.sections.technicals}><SwingPanel pat={tech.patterns} /></Section>
+          <TopContracts symbol={s.symbol} horizon="short" dteMin={20} dteMax={30} n={3} />
           <OptionEvaluator symbol={s.symbol} horizon="short" direction={setup.direction} />
           <div className="grid g3">
             <Card title="Flow snapshot">
@@ -73,7 +88,7 @@ export function Horizon({ s, h }: { s: RunState; h: "short" | "medium" | "long" 
               </div>
             </Card>
             <Card title="Event risk inside the window">
-              <ul className="small" style={{ paddingLeft: 16, margin: 0 }}>{(ev.events || []).filter((e: any) => e.days_until <= 20).slice(0, 10).map((e: any, i: number) => <li key={i}><span className="mono">{date(e.date)} +{e.days_until}d</span> [{e.importance}] {e.label}</li>)}</ul>
+              <ul className="small" style={{ paddingLeft: 16, margin: 0 }}>{(ev.events || []).filter((e: any) => e.days_until <= 20).slice(0, 12).map((e: any, i: number) => <li key={i}><span className="mono">{date(e.date)} +{e.days_until}d</span> [{e.importance}] {e.label}<ImpactTag imp={e.impact} /></li>)}</ul>
             </Card>
             <Card title="Vol context">
               <div className="kv">
@@ -101,7 +116,7 @@ export function Horizon({ s, h }: { s: RunState; h: "short" | "medium" | "long" 
               </div>
             </Card>
             <Card title="Catalysts (next 6 months)">
-              <ul className="small" style={{ paddingLeft: 16, margin: 0, maxHeight: 240, overflow: "auto" }}>{(ev.events || []).filter((e: any) => e.importance >= 2).slice(0, 14).map((e: any, i: number) => <li key={i}><span className="mono">{date(e.date)} +{e.days_until}d</span> {e.label}{e.confirmed ? "" : " (est.)"}</li>)}</ul>
+              <ul className="small" style={{ paddingLeft: 16, margin: 0, maxHeight: 240, overflow: "auto" }}>{(ev.events || []).filter((e: any) => e.importance >= 2).slice(0, 14).map((e: any, i: number) => <li key={i}><span className="mono">{date(e.date)} +{e.days_until}d</span> {e.label}{e.confirmed ? "" : " (est.)"}<ImpactTag imp={e.impact} /></li>)}</ul>
             </Card>
             <Card title="Analysts & positioning">
               <div className="kv">

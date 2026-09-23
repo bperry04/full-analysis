@@ -36,6 +36,46 @@ def suggest_expiry(expiries: list, horizon: str, today) -> Any:
     return after[0] if after else (cands[-1][0] if cands else None)
 
 
+def top_contracts(chain: pd.DataFrame, spot: float, dte_min: int, dte_max: int, n: int = 3, rights: tuple[str, ...] = ("C", "P"), **kw: Any) -> dict[str, Any]:
+    """Best N contracts across every expiry in [dte_min, dte_max] and both rights, ranked by the same score.
+    Under a directional thesis the opposite right scores poorly on expected value, so the list self-selects the aligned side."""
+    exps = sorted({(pd.Timestamp(e).date(), int(d)) for e, d in zip(chain["expiry"], chain["dte"]) if dte_min <= int(d) <= dte_max})
+    if not exps:
+        return {"available": False, "reason": f"no expirations between {dte_min} and {dte_max} days out"}
+    frames, per_expiry = [], []
+    for exp, dte in exps:
+        for right in rights:
+            r = evaluate(chain, spot, exp, right, **kw)
+            if not r.get("available"):
+                continue
+            df = r["ranked"].copy()
+            df["expiry"], df["right"], df["dte"] = str(exp), right, dte
+            frames.append(df)
+            per_expiry.append({"expiry": str(exp), "right": right, "dte": dte, "n": int(len(df)), "best_score": float(df["score"].max()), "thesis": r["thesis"], "iv_crush": r["iv_crush_modelled"]})
+    if not frames:
+        return {"available": False, "reason": "no liquid contracts in that window"}
+    allc = pd.concat(frames, ignore_index=True).sort_values("score", ascending=False)
+    # diversify: first one contract per (expiry, right), then fill with the next-best contracts whose strike is ≥4% away from every pick
+    recs = allc.to_dict("records")
+    picks, combos = [], set()
+    for r in recs:
+        if (r["expiry"], r["right"]) in combos:
+            continue
+        combos.add((r["expiry"], r["right"]))
+        picks.append(r)
+        if len(picks) >= n:
+            break
+    for r in recs:
+        if len(picks) >= n:
+            break
+        if any(p is r for p in picks) or any(p["expiry"] == r["expiry"] and p["right"] == r["right"] and abs(p["strike"] - r["strike"]) / spot < 0.04 for p in picks):
+            continue
+        picks.append(r)
+    picks.sort(key=lambda r: -r["score"])
+    return {"available": True, "window": [dte_min, dte_max], "top": picks, "n_scored": int(len(allc)), "expiries": per_expiry, "spot": spot,
+            "note": "ranked across all expirations in the window and both calls and puts; diversified across expiry and call/put before filling by score"}
+
+
 def _grid(spot: float, sigma_h: float, drift: float, n: int = 601) -> tuple[np.ndarray, np.ndarray]:
     """Lognormal grid of terminal prices and probability weights over ±5σ."""
     z = np.linspace(-5, 5, n)

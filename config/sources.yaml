@@ -125,6 +125,11 @@ routes:
       - {provider: yahoo,   timeout_s: 40}
       - {provider: finnhub, when: has_key:finnhub, timeout_s: 20}
 
+  analyst_estimates:
+    mode: failover
+    base:
+      - {provider: yahoo, timeout_s: 40}
+
   insider_txns:
     mode: failover
     base:

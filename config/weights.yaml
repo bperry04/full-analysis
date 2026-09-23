@@ -16,7 +16,7 @@ categories:
   sentiment:        {long: 1,  medium: 4,  short: 7}
   events:           {long: 1,  medium: 6,  short: 9}
   shorts:           {long: 1,  medium: 4,  short: 5}
-  analysts:         {long: 2,  medium: 6,  short: 2}
+  analysts:         {long: 3,  medium: 10, short: 3}    # incl. PEAD, estimate revisions/trend, consensus shift (research: strongest 1-6 month signals)
 
 # Optional per-factor multipliers (default 1.0)
 factors:
@@ -25,6 +25,12 @@ factors:
   trend.ma_stack: 1.3
   options.iv_rank: 1.2
   events.days_to_earnings: 1.0
+  analysts.pead: 1.3
+  analysts.estimate_revisions: 1.3
+  analysts.estimate_trend: 1.2
+  quality.gross_profitability: 1.2
+  quality.asset_growth: 1.1
+  patterns.short_term_reversal: 1.1
 
 # Label bands for the 0-100 score
 bands:
