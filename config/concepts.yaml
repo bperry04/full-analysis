@@ -1,0 +1,451 @@
+# Canonical financial concepts -> ordered XBRL tag candidates.
+#   period: duration | instant
+#   unit:   USD | shares | USD/shares | pure
+#   tags:   first candidate with adequate coverage wins for the WHOLE series (never spliced silently);
+#           gaps are filled from later candidates and flagged TAG_SPLICE.
+#   formula: evaluated on already-resolved concepts when no tag resolves (or `prefer_formula: true`).
+#   sign:   -1 flips reported sign (e.g. expenses reported positive that we want as outflows) — default +1.
+
+concepts:
+  # ---------------- income statement (duration) ----------------
+  revenue:
+    label: Revenue
+    statement: income
+    period: duration
+    unit: USD
+    tags: [RevenueFromContractWithCustomerExcludingAssessedTax, Revenues, SalesRevenueNet, RevenueFromContractWithCustomerIncludingAssessedTax,
+           SalesRevenueGoodsNet, TotalRevenuesAndOtherIncome, RevenuesNetOfInterestExpense, SalesRevenueServicesNet, RegulatedAndUnregulatedOperatingRevenue]
+  cogs:
+    label: Cost of revenue
+    statement: income
+    period: duration
+    unit: USD
+    tags: [CostOfRevenue, CostOfGoodsAndServicesSold, CostOfGoodsSold, CostOfServices, CostOfGoodsAndServiceExcludingDepreciationDepletionAndAmortization,
+           CostOfGoodsSoldExcludingDepreciationDepletionAndAmortization]
+  gross_profit:
+    label: Gross profit
+    statement: income
+    period: duration
+    unit: USD
+    tags: [GrossProfit]
+    formula: revenue - cogs
+  rnd:
+    label: R&D expense
+    statement: income
+    period: duration
+    unit: USD
+    tags: [ResearchAndDevelopmentExpense, ResearchAndDevelopmentExpenseExcludingAcquiredInProcessCost, ResearchAndDevelopmentExpenseSoftwareExcludingAcquiredInProcessCost]
+  sga:
+    label: SG&A expense
+    statement: income
+    period: duration
+    unit: USD
+    tags: [SellingGeneralAndAdministrativeExpense]
+    formula: sales_marketing + general_admin
+  sales_marketing:
+    label: Sales & marketing
+    statement: income
+    period: duration
+    unit: USD
+    tags: [SellingAndMarketingExpense, SellingExpense, MarketingExpense]
+  general_admin:
+    label: General & administrative
+    statement: income
+    period: duration
+    unit: USD
+    tags: [GeneralAndAdministrativeExpense]
+  opex:
+    label: Operating expenses
+    statement: income
+    period: duration
+    unit: USD
+    tags: [OperatingExpenses, CostsAndExpenses, OperatingCostsAndExpenses]
+  operating_income:
+    label: Operating income
+    statement: income
+    period: duration
+    unit: USD
+    tags: [OperatingIncomeLoss]
+    formula: gross_profit - opex
+  interest_expense:
+    label: Interest expense
+    statement: income
+    period: duration
+    unit: USD
+    tags: [InterestExpense, InterestExpenseNonoperating, InterestExpenseDebt, InterestAndDebtExpense, InterestExpenseBorrowings]
+  interest_income:
+    label: Interest & investment income
+    statement: income
+    period: duration
+    unit: USD
+    tags: [InvestmentIncomeInterest, InvestmentIncomeInterestAndDividend, InterestAndOtherIncome, InterestIncomeOther, InvestmentIncomeNet]
+  other_nonop:
+    label: Other non-operating income (expense)
+    statement: income
+    period: duration
+    unit: USD
+    tags: [NonoperatingIncomeExpense, OtherNonoperatingIncomeExpense]
+  pretax_income:
+    label: Pre-tax income
+    statement: income
+    period: duration
+    unit: USD
+    tags: [IncomeLossFromContinuingOperationsBeforeIncomeTaxesExtraordinaryItemsNoncontrollingInterest,
+           IncomeLossFromContinuingOperationsBeforeIncomeTaxesMinorityInterestAndIncomeLossFromEquityMethodInvestments,
+           IncomeLossFromContinuingOperationsBeforeIncomeTaxesDomestic, IncomeLossBeforeIncomeTaxes]
+    formula: net_income + income_tax
+  income_tax:
+    label: Income tax expense
+    statement: income
+    period: duration
+    unit: USD
+    tags: [IncomeTaxExpenseBenefit, IncomeTaxExpenseBenefitContinuingOperations]
+  net_income:
+    label: Net income
+    statement: income
+    period: duration
+    unit: USD
+    tags: [NetIncomeLoss, ProfitLoss, NetIncomeLossAvailableToCommonStockholdersBasic, IncomeLossFromContinuingOperations,
+           ComprehensiveIncomeNetOfTax]
+  eps_basic:
+    label: EPS (basic)
+    statement: income
+    period: duration
+    unit: USD/shares
+    tags: [EarningsPerShareBasic, IncomeLossFromContinuingOperationsPerBasicShare, EarningsPerShareBasicAndDiluted]
+  eps_diluted:
+    label: EPS (diluted)
+    statement: income
+    period: duration
+    unit: USD/shares
+    tags: [EarningsPerShareDiluted, IncomeLossFromContinuingOperationsPerDilutedShare, EarningsPerShareBasicAndDiluted]
+  shares_basic:
+    label: Weighted avg shares (basic)
+    statement: income
+    period: duration
+    unit: shares
+    tags: [WeightedAverageNumberOfSharesOutstandingBasic, WeightedAverageNumberOfShareOutstandingBasicAndDiluted]
+  shares_diluted:
+    label: Weighted avg shares (diluted)
+    statement: income
+    period: duration
+    unit: shares
+    tags: [WeightedAverageNumberOfDilutedSharesOutstanding, WeightedAverageNumberOfShareOutstandingBasicAndDiluted]
+  da:
+    label: Depreciation & amortization
+    statement: cashflow
+    period: duration
+    unit: USD
+    tags: [DepreciationDepletionAndAmortization, DepreciationAndAmortization, DepreciationAmortizationAndAccretionNet, DepreciationAmortizationAndOther, Depreciation]
+  sbc:
+    label: Stock-based compensation
+    statement: cashflow
+    period: duration
+    unit: USD
+    tags: [ShareBasedCompensation, AllocatedShareBasedCompensationExpense, StockOptionPlanExpense]
+  ebitda:
+    label: EBITDA
+    statement: income
+    period: duration
+    unit: USD
+    tags: []
+    formula: operating_income + da
+  ebit:
+    label: EBIT
+    statement: income
+    period: duration
+    unit: USD
+    tags: []
+    formula: pretax_income + interest_expense
+
+  # ---------------- cash flow (duration) ----------------
+  cfo:
+    label: Cash from operations
+    statement: cashflow
+    period: duration
+    unit: USD
+    tags: [NetCashProvidedByUsedInOperatingActivities, NetCashProvidedByUsedInOperatingActivitiesContinuingOperations]
+  cfi:
+    label: Cash from investing
+    statement: cashflow
+    period: duration
+    unit: USD
+    tags: [NetCashProvidedByUsedInInvestingActivities, NetCashProvidedByUsedInInvestingActivitiesContinuingOperations]
+  cff:
+    label: Cash from financing
+    statement: cashflow
+    period: duration
+    unit: USD
+    tags: [NetCashProvidedByUsedInFinancingActivities, NetCashProvidedByUsedInFinancingActivitiesContinuingOperations]
+  capex:
+    label: Capital expenditures
+    statement: cashflow
+    period: duration
+    unit: USD
+    tags: [PaymentsToAcquirePropertyPlantAndEquipment, PaymentsToAcquireProductiveAssets, PaymentsForCapitalImprovements,
+           PaymentsToAcquireOtherPropertyPlantAndEquipment, PaymentsForProceedsFromProductiveAssets]
+  fcf:
+    label: Free cash flow
+    statement: cashflow
+    period: duration
+    unit: USD
+    tags: []
+    formula: cfo - capex
+  dividends_paid:
+    label: Dividends paid
+    statement: cashflow
+    period: duration
+    unit: USD
+    tags: [PaymentsOfDividends, PaymentsOfDividendsCommonStock, PaymentsOfOrdinaryDividends, PaymentsOfDividendsMinorityInterest]
+  buybacks:
+    label: Share repurchases
+    statement: cashflow
+    period: duration
+    unit: USD
+    tags: [PaymentsForRepurchaseOfCommonStock, PaymentsForRepurchaseOfEquity]
+  stock_issued:
+    label: Stock issued
+    statement: cashflow
+    period: duration
+    unit: USD
+    tags: [ProceedsFromIssuanceOfCommonStock, ProceedsFromIssuanceOrSaleOfEquity, ProceedsFromStockOptionsExercised]
+  debt_issued:
+    label: Debt issued
+    statement: cashflow
+    period: duration
+    unit: USD
+    tags: [ProceedsFromIssuanceOfLongTermDebt, ProceedsFromIssuanceOfDebt, ProceedsFromDebtNetOfIssuanceCosts, ProceedsFromIssuanceOfSeniorLongTermDebt]
+  debt_repaid:
+    label: Debt repaid
+    statement: cashflow
+    period: duration
+    unit: USD
+    tags: [RepaymentsOfLongTermDebt, RepaymentsOfDebt, RepaymentsOfSeniorDebt, RepaymentsOfDebtAndCapitalLeaseObligations]
+  acquisitions:
+    label: Acquisitions (net of cash)
+    statement: cashflow
+    period: duration
+    unit: USD
+    tags: [PaymentsToAcquireBusinessesNetOfCashAcquired, PaymentsToAcquireBusinessesGross]
+
+  # ---------------- balance sheet (instant) ----------------
+  cash:
+    label: Cash & equivalents
+    statement: balance
+    period: instant
+    unit: USD
+    tags: [CashAndCashEquivalentsAtCarryingValue, CashCashEquivalentsRestrictedCashAndRestrictedCashEquivalents, Cash, CashAndDueFromBanks]
+  st_investments:
+    label: Short-term investments
+    statement: balance
+    period: instant
+    unit: USD
+    tags: [ShortTermInvestments, MarketableSecuritiesCurrent, AvailableForSaleSecuritiesDebtSecuritiesCurrent, MarketableSecurities, AvailableForSaleSecuritiesCurrent]
+  receivables:
+    label: Accounts receivable
+    statement: balance
+    period: instant
+    unit: USD
+    tags: [AccountsReceivableNetCurrent, ReceivablesNetCurrent, AccountsAndOtherReceivablesNetCurrent]
+  inventory:
+    label: Inventory
+    statement: balance
+    period: instant
+    unit: USD
+    tags: [InventoryNet, InventoryFinishedGoodsNetOfReserves, InventoryGross]
+  current_assets:
+    label: Total current assets
+    statement: balance
+    period: instant
+    unit: USD
+    tags: [AssetsCurrent]
+  ppe_net:
+    label: PP&E, net
+    statement: balance
+    period: instant
+    unit: USD
+    tags: [PropertyPlantAndEquipmentNet, PropertyPlantAndEquipmentAndFinanceLeaseRightOfUseAssetAfterAccumulatedDepreciationAndAmortization]
+  goodwill:
+    label: Goodwill
+    statement: balance
+    period: instant
+    unit: USD
+    tags: [Goodwill]
+  intangibles:
+    label: Intangibles (ex-goodwill)
+    statement: balance
+    period: instant
+    unit: USD
+    tags: [IntangibleAssetsNetExcludingGoodwill, FiniteLivedIntangibleAssetsNet, IntangibleAssetsNetIncludingGoodwill]
+  lt_investments:
+    label: Long-term investments
+    statement: balance
+    period: instant
+    unit: USD
+    tags: [LongTermInvestments, MarketableSecuritiesNoncurrent, AvailableForSaleSecuritiesDebtSecuritiesNoncurrent, AvailableForSaleSecuritiesNoncurrent]
+  total_assets:
+    label: Total assets
+    statement: balance
+    period: instant
+    unit: USD
+    tags: [Assets]
+  payables:
+    label: Accounts payable
+    statement: balance
+    period: instant
+    unit: USD
+    tags: [AccountsPayableCurrent, AccountsPayableAndAccruedLiabilitiesCurrent, AccountsPayableTradeCurrent]
+  current_liabilities:
+    label: Total current liabilities
+    statement: balance
+    period: instant
+    unit: USD
+    tags: [LiabilitiesCurrent]
+  st_debt:
+    label: Short-term debt
+    statement: balance
+    period: instant
+    unit: USD
+    tags: [DebtCurrent, LongTermDebtCurrent, ShortTermBorrowings, LongTermDebtAndCapitalLeaseObligationsCurrent, NotesPayableCurrent]
+    formula: ?lt_debt_current + ?commercial_paper
+  lt_debt_current:
+    label: Current portion of LT debt
+    statement: balance
+    period: instant
+    unit: USD
+    tags: [LongTermDebtCurrent, LongTermDebtAndCapitalLeaseObligationsCurrent]
+  commercial_paper:
+    label: Commercial paper
+    statement: balance
+    period: instant
+    unit: USD
+    tags: [CommercialPaper]
+  lt_debt:
+    label: Long-term debt
+    statement: balance
+    period: instant
+    unit: USD
+    tags: [LongTermDebtNoncurrent, LongTermDebtAndCapitalLeaseObligations, LongTermDebt, SeniorLongTermNotes]
+  total_debt:
+    label: Total debt
+    statement: balance
+    period: instant
+    unit: USD
+    tags: [DebtLongtermAndShorttermCombinedAmount]
+    formula: st_debt + lt_debt
+  operating_lease_liab:
+    label: Operating lease liabilities
+    statement: balance
+    period: instant
+    unit: USD
+    tags: [OperatingLeaseLiability]
+    formula: ?op_lease_current + ?op_lease_noncurrent
+  op_lease_current:
+    label: Operating lease liab (current)
+    statement: balance
+    period: instant
+    unit: USD
+    tags: [OperatingLeaseLiabilityCurrent]
+  op_lease_noncurrent:
+    label: Operating lease liab (noncurrent)
+    statement: balance
+    period: instant
+    unit: USD
+    tags: [OperatingLeaseLiabilityNoncurrent]
+  deferred_revenue:
+    label: Deferred revenue
+    statement: balance
+    period: instant
+    unit: USD
+    tags: [ContractWithCustomerLiabilityCurrent, DeferredRevenueCurrent, ContractWithCustomerLiability, DeferredRevenue]
+  total_liabilities:
+    label: Total liabilities
+    statement: balance
+    period: instant
+    unit: USD
+    tags: [Liabilities]
+    formula: total_assets - equity_incl_nci
+  equity:
+    label: Stockholders' equity
+    statement: balance
+    period: instant
+    unit: USD
+    tags: [StockholdersEquity, StockholdersEquityIncludingPortionAttributableToNoncontrollingInterest]
+  equity_incl_nci:
+    label: Total equity incl. NCI
+    statement: balance
+    period: instant
+    unit: USD
+    tags: [StockholdersEquityIncludingPortionAttributableToNoncontrollingInterest, StockholdersEquity]
+  minority_interest:
+    label: Noncontrolling interest
+    statement: balance
+    period: instant
+    unit: USD
+    tags: [MinorityInterest]
+  retained_earnings:
+    label: Retained earnings
+    statement: balance
+    period: instant
+    unit: USD
+    tags: [RetainedEarningsAccumulatedDeficit]
+  treasury_stock:
+    label: Treasury stock
+    statement: balance
+    period: instant
+    unit: USD
+    tags: [TreasuryStockValue, TreasuryStockCommonValue]
+  shares_outstanding:
+    label: Shares outstanding
+    statement: balance
+    period: instant
+    unit: shares
+    tags: [dei:EntityCommonStockSharesOutstanding, CommonStockSharesOutstanding]
+
+  # ---------------- bank / insurer specific ----------------
+  net_interest_income:
+    label: Net interest income
+    statement: income
+    period: duration
+    unit: USD
+    tags: [InterestIncomeExpenseNet, InterestIncomeExpenseAfterProvisionForLoanLoss]
+  provision_credit_losses:
+    label: Provision for credit losses
+    statement: income
+    period: duration
+    unit: USD
+    tags: [ProvisionForLoanLeaseAndOtherLosses, ProvisionForLoanLossesExpensed, ProvisionForCreditLosses]
+  noninterest_income:
+    label: Non-interest income
+    statement: income
+    period: duration
+    unit: USD
+    tags: [NoninterestIncome]
+  noninterest_expense:
+    label: Non-interest expense
+    statement: income
+    period: duration
+    unit: USD
+    tags: [NoninterestExpense]
+  loans_net:
+    label: Loans, net
+    statement: balance
+    period: instant
+    unit: USD
+    tags: [LoansAndLeasesReceivableNetReportedAmount, NotesReceivableNet, FinancingReceivableExcludingAccruedInterestAfterAllowanceForCreditLoss]
+  deposits:
+    label: Deposits
+    statement: balance
+    period: instant
+    unit: USD
+    tags: [Deposits]
+
+# Statement display order
+statements:
+  income: [revenue, cogs, gross_profit, rnd, sga, sales_marketing, general_admin, opex, operating_income, interest_expense, interest_income,
+           other_nonop, pretax_income, income_tax, net_income, eps_basic, eps_diluted, shares_basic, shares_diluted, ebitda, ebit,
+           net_interest_income, provision_credit_losses, noninterest_income, noninterest_expense]
+  balance: [cash, st_investments, receivables, inventory, current_assets, ppe_net, goodwill, intangibles, lt_investments, total_assets,
+            payables, current_liabilities, st_debt, lt_debt, total_debt, operating_lease_liab, deferred_revenue, total_liabilities,
+            equity, equity_incl_nci, minority_interest, retained_earnings, treasury_stock, shares_outstanding, loans_net, deposits]
+  cashflow: [cfo, da, sbc, capex, fcf, cfi, acquisitions, cff, dividends_paid, buybacks, stock_issued, debt_issued, debt_repaid]

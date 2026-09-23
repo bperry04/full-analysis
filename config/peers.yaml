@@ -1,0 +1,4 @@
+# Manual peer overrides (ticker -> peers). Anything not listed uses Yahoo's related-symbol discovery.
+AAPL: [MSFT, GOOGL, DELL, HPQ, SONY, SSNLF, QCOM]
+SMCI: [DELL, HPE, NVDA, AMD, ANET, CIEN, VRT]
+AAL: [DAL, UAL, LUV, JBLU, ALK]

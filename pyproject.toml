@@ -1,0 +1,15 @@
+[project]
+name = "fa"
+version = "0.1.0"
+description = "Full Analysis — free-data stock/company analyzer with traceable horizon scores"
+requires-python = ">=3.13,<3.14"
+readme = "README.md"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+filterwarnings = ["ignore::DeprecationWarning", "ignore::FutureWarning"]
+
+[tool.ruff]
+line-length = 110
+target-version = "py313"

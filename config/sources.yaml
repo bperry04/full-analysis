@@ -1,0 +1,217 @@
+# The source registry. For each data need: an ordered list of providers, with route mode.
+#   failover  — first provider that answers and validates wins
+#   overlay   — base provider gives the full frame; overlay providers refresh a subset of rows/fields
+#   consensus — several are called, `compare` field is checked within tolerance_pct
+# Provider defaults (tier/latency) can be overridden per binding.
+
+providers:
+  ibkr:       {tier: A, latency: realtime,   requires: [ibkr_connected], license_note: "IBKR API, per account market-data entitlements"}
+  schwab:     {tier: A, latency: realtime,   requires: [schwab_authed],   license_note: "Schwab Trader API, personal use"}
+  cboe:       {tier: A, latency: delayed_15, license_note: "CBOE delayed quotes, personal use"}
+  sec_edgar:  {tier: A, latency: filing,     license_note: "SEC EDGAR public data, fair-access policy"}
+  yahoo:      {tier: B, latency: delayed_15, license_note: "Yahoo Finance via yfinance, unofficial"}
+  nasdaq:     {tier: B, latency: delayed_15, license_note: "Nasdaq.com public API, unofficial"}
+  finra:      {tier: A, latency: eod,        license_note: "FINRA public data"}
+  fred:       {tier: A, latency: release,    requires: [has_key:fred], license_note: "FRED API, St. Louis Fed"}
+  treasury:   {tier: A, latency: release,    license_note: "US Treasury Fiscal Data"}
+  stooq:      {tier: C, latency: eod,        license_note: "Stooq public CSV"}
+  rss:        {tier: B, latency: near_realtime}
+  stocktwits: {tier: C, latency: near_realtime}
+  reddit:     {tier: C, latency: near_realtime, requires: [has_key:reddit]}
+  finnhub:    {tier: B, latency: delayed_15, requires: [has_key:finnhub]}
+
+routes:
+  quote:
+    mode: failover
+    base:
+      - {provider: ibkr,   when: ibkr_connected, timeout_s: 8}
+      - {provider: schwab, when: schwab_authed,  timeout_s: 8}
+      - {provider: cboe,   timeout_s: 15}
+      - {provider: yahoo,  timeout_s: 20}
+      - {provider: nasdaq, timeout_s: 15}
+
+  ohlcv:
+    mode: failover
+    base:
+      - {provider: yahoo,  timeout_s: 60}       # split/dividend-adjusted, all intervals
+      - {provider: ibkr,   when: ibkr_connected, timeout_s: 60}
+      - {provider: stooq,  timeout_s: 30, degraded: true}   # daily only
+
+  option_expirations:
+    mode: failover
+    base:
+      - {provider: cboe,  timeout_s: 30}
+      - {provider: yahoo, timeout_s: 30}
+
+  option_chain:
+    mode: overlay
+    base:
+      - {provider: cboe,   timeout_s: 40, min_rows: 20}        # full chain with exchange greeks + sizes
+      - {provider: schwab, when: schwab_authed, timeout_s: 40, min_rows: 20}
+      - {provider: yahoo,  timeout_s: 120, min_rows: 20, degraded: true}   # IV only; greeks computed
+    overlay:
+      - provider: ibkr
+        when: ibkr_connected
+        timeout_s: 45
+        key: [contract_symbol]
+        fields: [bid, ask, bid_size, ask_size, last, iv, delta, gamma, theta, vega, underlying_price]
+
+  iv_history:
+    mode: failover
+    base:
+      - {provider: ibkr, when: ibkr_connected, timeout_s: 60}
+
+  hv_history:
+    mode: failover
+    base:
+      - {provider: ibkr, when: ibkr_connected, timeout_s: 60}
+
+  ticks:
+    mode: failover
+    base:
+      - {provider: ibkr, when: ibkr_connected, timeout_s: 60}
+
+  depth:
+    mode: failover
+    base:
+      - {provider: ibkr, when: ibkr_connected, timeout_s: 20}
+
+  ticker_map:
+    mode: failover
+    base:
+      - {provider: sec_edgar, timeout_s: 60}
+
+  xbrl_facts:
+    mode: failover
+    base:
+      - {provider: sec_edgar, timeout_s: 90, min_rows: 50}
+
+  filings:
+    mode: failover
+    base:
+      - {provider: sec_edgar, timeout_s: 60}
+
+  segments:
+    mode: failover
+    base:
+      - {provider: sec_edgar, timeout_s: 120}
+
+  statements_fallback:
+    mode: failover
+    base:
+      - {provider: yahoo, timeout_s: 60, degraded: true}
+
+  company_profile:
+    mode: failover
+    base:
+      - {provider: yahoo,  timeout_s: 40}
+      - {provider: nasdaq, timeout_s: 20}
+
+  earnings_dates:
+    mode: failover
+    base:
+      - {provider: yahoo,   timeout_s: 40}
+      - {provider: finnhub, when: has_key:finnhub, timeout_s: 20}
+
+  analyst_recs:
+    mode: failover
+    base:
+      - {provider: yahoo,   timeout_s: 40}
+      - {provider: finnhub, when: has_key:finnhub, timeout_s: 20}
+
+  analyst_targets:
+    mode: failover
+    base:
+      - {provider: yahoo,   timeout_s: 40}
+      - {provider: finnhub, when: has_key:finnhub, timeout_s: 20}
+
+  insider_txns:
+    mode: failover
+    base:
+      - {provider: yahoo,     timeout_s: 40}
+      - {provider: sec_edgar, timeout_s: 60}
+
+  institutional_holders:
+    mode: failover
+    base:
+      - {provider: yahoo,  timeout_s: 40}
+      - {provider: nasdaq, timeout_s: 20}
+
+  short_interest:
+    mode: consensus
+    tolerance_pct: 3.0
+    base:
+      - {provider: finra,  timeout_s: 30, compare: shares_short}
+      - {provider: nasdaq, timeout_s: 20, compare: shares_short}
+      - {provider: yahoo,  timeout_s: 40, compare: shares_short}
+
+  short_volume:
+    mode: failover
+    base:
+      - {provider: finra, timeout_s: 60}
+
+  news:
+    mode: failover
+    base:
+      - {provider: rss,   timeout_s: 60}
+      - {provider: yahoo, timeout_s: 30, degraded: true}
+
+  macro_news:
+    mode: failover
+    base:
+      - {provider: rss, timeout_s: 60}
+
+  social_stocktwits:
+    mode: failover
+    base:
+      - {provider: stocktwits, timeout_s: 20}
+
+  social_reddit:
+    mode: failover
+    base:
+      - {provider: reddit, when: has_key:reddit, timeout_s: 40}
+
+  macro_series:
+    mode: failover
+    base:
+      - {provider: fred,     when: has_key:fred, timeout_s: 30}
+      - {provider: treasury, timeout_s: 30}
+      - {provider: stooq,    timeout_s: 30, degraded: true}
+
+  yield_curve:
+    mode: failover
+    base:
+      - {provider: treasury, timeout_s: 30}
+      - {provider: fred,     when: has_key:fred, timeout_s: 30}
+
+  econ_calendar:
+    mode: failover
+    base:
+      - {provider: nasdaq, timeout_s: 20}
+
+  earnings_calendar:
+    mode: failover
+    base:
+      - {provider: nasdaq, timeout_s: 20}
+
+  dividends:
+    mode: failover
+    base:
+      - {provider: yahoo,  timeout_s: 30}
+      - {provider: nasdaq, timeout_s: 20}
+
+  splits:
+    mode: failover
+    base:
+      - {provider: yahoo, timeout_s: 30}
+
+  vix_history:
+    mode: failover
+    base:
+      - {provider: cboe,  timeout_s: 30}
+      - {provider: yahoo, timeout_s: 30}
+
+  fomc_calendar:
+    mode: failover
+    base:
+      - {provider: rss, timeout_s: 30}
