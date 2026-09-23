@@ -38,8 +38,10 @@ export function Horizon({ s, h }: { s: RunState; h: "short" | "medium" | "long" 
   const cats = Object.entries(sc?.category_scores || {}).map(([k, val]: any) => ({ label: `${k} (w${val.weight})`, value: (val.score ?? 50) - 50 }));
   const title = { short: "Short — 2–20 trading days (swing)", medium: "Medium — 1–6 months", long: "Long — 6–24 months" }[h];
   if (!s.scores && s.status === "idle") return <div className="card"><div className="muted">Run an analysis first.</div></div>;
+  const failed = Object.entries(s.sections).filter(([, st]) => st.status === "failed");
   return (
     <div className="grid" style={{ gap: 12 }}>
+      {failed.length ? <div className="err"><b>Sections that failed this run</b> (their factors show as "no data" below): {failed.map(([n, st]) => <div key={n}><b>{n}</b>: {st.reason}</div>)}</div> : null}
       <div className="grid g3">
         <Gauge h={title} s={sc} />
         <Card title="Quantitative drivers" sub={`${sc?.n_present ?? 0}/${sc?.n_factors ?? 0} factors scored — click one to drill down`}>

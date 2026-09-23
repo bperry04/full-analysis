@@ -143,32 +143,42 @@ class Ibkr(Provider):
             ib = await SESSION._connect()
             c = _stock(symbol)
             await ib.qualifyContractsAsync(c)
-            t = ib.reqMktData(c, "", snapshot=False, regulatorySnapshot=False)
-            for _ in range(40):          # up to ~4s for the first tick
-                await asyncio.sleep(0.1)
-                if t.last == t.last and t.last is not None or (t.bid and t.ask):
-                    break
-            if (t.last != t.last or t.last is None) and not (t.bid and t.ask) and SESSION.market_data_type == 1:
-                ib.reqMarketDataType(3)            # fall back to delayed
-                SESSION.market_data_type = 3
-                ib.cancelMktData(c)
-                t = ib.reqMktData(c, "", snapshot=False)
-                for _ in range(40):
+
+            def got(t) -> bool:
+                return (_f(t.last) is not None) or (_f(t.bid) is not None and _f(t.ask) is not None)
+
+            async def request(mdt: int, wait_s: float):
+                ib.reqMarketDataType(mdt)
+                t = ib.reqMktData(c, "", snapshot=False, regulatorySnapshot=False)
+                for _ in range(int(wait_s / 0.1)):
                     await asyncio.sleep(0.1)
-                    if (t.last == t.last and t.last is not None) or (t.bid and t.ask):
+                    if got(t):
                         break
+                return t
+
+            # delayed data (no subscription) takes a few seconds to start streaming; real-time is near-instant
+            t = await request(SESSION.market_data_type, 3.0 if SESSION.market_data_type == 1 else 8.0)
+            if not got(t) and SESSION.market_data_type == 1:
+                ib.cancelMktData(c)
+                SESSION.market_data_type = 3              # remember: this account has no real-time entitlement
+                t = await request(3, 8.0)
+            mdt = getattr(t, "marketDataType", SESSION.market_data_type) or SESSION.market_data_type
             out = {
                 "symbol": symbol.upper(), "price": _f(t.last) or _f(t.close), "bid": _f(t.bid), "ask": _f(t.ask),
                 "bid_size": _f(t.bidSize), "ask_size": _f(t.askSize), "last_size": _f(t.lastSize), "open": _f(t.open),
-                "high": _f(t.high), "low": _f(t.low), "prev_close": _f(t.close), "volume": _f(t.volume),
-                "halted": _f(t.halted), "market_data_type": getattr(t, "marketDataType", SESSION.market_data_type),
+                "high": _f(t.high), "low": _f(t.low), "prev_close": _f(t.close),
+                "volume": _f(t.volume) if mdt == 1 else None,      # IB's delayed volume field is not reliable
+                "halted": _f(t.halted), "market_data_type": mdt,
             }
             ib.cancelMktData(c)
             return out
-        q = await SESSION.call(_run, timeout=20)
+        q = await SESSION.call(_run, timeout=25)
         if not q.get("price"):
             raise NoData(self.name, f"no ticks for {symbol}")
         delayed = (q.get("market_data_type") or 1) >= 3
+        if delayed and q.get("bid") is None:
+            # without an entitlement IB's delayed stock quote is last/close only; CBOE's delayed quote carries bid/ask/sizes — let it answer
+            raise NoData(self.name, "IBKR delayed quote has no bid/ask (no market-data subscription) — deferring to CBOE")
         if q.get("prev_close") and q.get("price"):
             q["change"] = q["price"] - q["prev_close"]
             q["change_pct"] = q["change"] / q["prev_close"] * 100
@@ -221,24 +231,35 @@ class Ibkr(Provider):
             for i in range(0, len(opts), 50):
                 q = await ib.qualifyContractsAsync(*opts[i:i + 50])
                 qualified.extend([c for c in q if c.conId])
-            tickers = await ib.reqTickersAsync(*qualified)
-            rows = []
-            und_price = None
-            for c, t in zip(qualified, tickers):
-                g = t.modelGreeks or t.lastGreeks or t.bidGreeks
-                if g and g.undPrice:
-                    und_price = g.undPrice
-                rows.append(
-                    {"contract_symbol": c.localSymbol.replace(" ", ""), "bid": _f(t.bid), "ask": _f(t.ask), "bid_size": _f(t.bidSize),
-                     "ask_size": _f(t.askSize), "last": _f(t.last), "iv": _f(g.impliedVol) if g else None,
-                     "delta": _f(g.delta) if g else None, "gamma": _f(g.gamma) if g else None, "theta": _f(g.theta) if g else None,
-                     "vega": _f(g.vega) if g else None, "underlying_price": _f(g.undPrice) if g else None,
-                     "market_data_type": getattr(t, "marketDataType", SESSION.market_data_type)}
-                )
+
+            def collect(tickers):
+                rows, und_price = [], None
+                for c, t in zip(qualified, tickers):
+                    g = t.modelGreeks or t.lastGreeks or t.bidGreeks
+                    if g and g.undPrice:
+                        und_price = g.undPrice
+                    rows.append(
+                        {"contract_symbol": c.localSymbol.replace(" ", ""), "bid": _f(t.bid), "ask": _f(t.ask), "bid_size": _f(t.bidSize),
+                         "ask_size": _f(t.askSize), "last": _f(t.last), "iv": _f(g.impliedVol) if g else None,
+                         "delta": _f(g.delta) if g else None, "gamma": _f(g.gamma) if g else None, "theta": _f(g.theta) if g else None,
+                         "vega": _f(g.vega) if g else None, "underlying_price": _f(g.undPrice) if g else None,
+                         "market_data_type": getattr(t, "marketDataType", SESSION.market_data_type)}
+                    )
+                return rows, und_price
+
+            ib.reqMarketDataType(SESSION.market_data_type)
+            rows, und_price = collect(await ib.reqTickersAsync(*qualified))
+            filled = sum(1 for r in rows if r["bid"] is not None or r["iv"] is not None)
+            if filled < max(3, len(rows) // 5) and SESSION.market_data_type == 1:
+                # no real-time options subscription (IB error 354) → use IBKR's free delayed data for this and later calls
+                SESSION.market_data_type = 3
+                ib.reqMarketDataType(3)
+                rows, und_price = collect(await ib.reqTickersAsync(*qualified))
             return rows, und_price
-        rows, und_price = await SESSION.call(_run, timeout=60)
+        rows, und_price = await SESSION.call(_run, timeout=90)
+        rows = [r for r in rows if r["bid"] is not None or r["iv"] is not None or r["delta"] is not None]
         if not rows:
-            raise NoData(self.name, "no option tickers")
+            raise NoData(self.name, "no option data from IBKR (no options market-data entitlement, delayed included)")
         df = pd.DataFrame(rows)
         df["iv_source"] = "ibkr"
         df["greeks_source"] = "ibkr"

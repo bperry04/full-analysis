@@ -238,9 +238,12 @@ async def options_evaluate(symbol: str, right: str = "C", expiry: str | None = N
     sym = symbol.upper()
     res = _latest(sym) or {}
     led = Ledger("evaluate")
-    ch = await get_router().fetch(N.OPTION_CHAIN, led, symbol=sym)
-    chain = ch.data
-    q = await get_router().fetch(N.QUOTE, led, symbol=sym)
+    try:
+        ch = await get_router().fetch(N.OPTION_CHAIN, led, symbol=sym)
+        chain = ch.data
+        q = await get_router().fetch(N.QUOTE, led, symbol=sym)
+    except Exception as e:
+        return J({"available": False, "reason": f"could not load the option chain: {type(e).__name__}: {str(e)[:200]}"})
     spot = q.data.get("price") or float(chain["underlying_price"].dropna().iloc[0])
     rf = 0.04
     try:
@@ -263,7 +266,11 @@ async def options_evaluate(symbol: str, right: str = "C", expiry: str | None = N
     dte_earn = (res.get("events") or {}).get("days_to_earnings")
     expiries = sorted({str(e) for e in g["expiry"].astype(str).unique()})
     exp = expiry or EVL.suggest_expiry(expiries, horizon, _date.today())
-    out = EVL.evaluate(g, spot, exp, right, horizon, hold_days, target, dirn, quality, iv_atm, hv20, dte_earn, rf, dy, iv_rank)
+    try:
+        out = EVL.evaluate(g, spot, exp, right, horizon, hold_days, target, dirn, quality, iv_atm, hv20, dte_earn, rf, dy, iv_rank)
+    except Exception as e:
+        log.exception("option evaluate failed")
+        return J({"available": False, "reason": f"evaluation failed: {type(e).__name__}: {str(e)[:200]}", "expiries": expiries})
     out["expiries"] = expiries
     out["setup"] = {"setup": setup.get("setup"), "direction": setup.get("direction"), "quality": setup.get("quality"), "trend": setup.get("trend")}
     out["context"] = {"hv20": hv20, "iv_atm30": iv_atm, "iv_rank": iv_rank, "days_to_earnings": dte_earn, "rf": rf, "dividend_yield": dy, "quote_provider": q.provider, "chain_provider": ch.provider,

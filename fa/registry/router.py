@@ -263,13 +263,29 @@ class Router:
             )
             fields = [f for f in (b.fields or ov.columns) if f in ov.columns and f in base.columns]
             merged = base.set_index(b.key)
-            ovi = ov.set_index(b.key)[fields]
+            ovi = ov.drop_duplicates(b.key).set_index(b.key)[fields].apply(pd.to_numeric, errors="coerce")
             common = merged.index.intersection(ovi.index)
-            merged.loc[common, fields] = ovi.loc[common, fields].values
-            merged.loc[common, "prov_id"] = oprov.prov_id
+            # only replace where the overlay actually has a value — a faster source with no data must never blank a good one
+            touched = 0
+            if len(common):
+                sub = ovi.loc[common]
+                has_any = sub.notna().any(axis=1)
+                rows_ok = common[has_any.values]
+                for f in fields:
+                    vals = sub.loc[rows_ok, f]
+                    ok = vals.notna()
+                    if ok.any():
+                        merged.loc[rows_ok[ok.values], f] = vals[ok].astype(float).values
+                if len(rows_ok):
+                    merged.loc[rows_ok, "prov_id"] = oprov.prov_id
+                    touched = int(len(rows_ok))
             base = merged.reset_index()
-            result.prov.attempts.append(Attempt(f"overlay:{b.provider}", "ok", f"{len(common)} rows updated", ms))
-            self.circuit.record_success(b.provider, need, ms)
+            if touched == 0:
+                oprov.quality_flags.append("NO_DATA")
+                result.prov.attempts.append(Attempt(f"overlay:{b.provider}", "nodata", "overlay returned no values (market data not subscribed?)", ms))
+            else:
+                result.prov.attempts.append(Attempt(f"overlay:{b.provider}", "ok", f"{touched} rows updated", ms))
+                self.circuit.record_success(b.provider, need, ms)
         result.data = base
 
     def _log(self, need: str, params: dict, result: Result | None, attempts: list[Attempt]) -> None:

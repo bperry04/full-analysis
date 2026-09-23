@@ -28,3 +28,5 @@ def setup_logging(level: int = logging.INFO) -> None:
         pass
     for noisy in ("httpx", "httpcore", "yfinance", "peewee", "urllib3", "ib_async", "apscheduler"):
         logging.getLogger(noisy).setLevel(logging.WARNING)
+    # IB reports "market data not subscribed" (354) as an ERROR per contract; we handle it by switching to delayed data
+    logging.getLogger("ib_async.wrapper").setLevel(logging.CRITICAL)
