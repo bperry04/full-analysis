@@ -45,10 +45,12 @@ def combine_history(surface_hist: pd.DataFrame | None, ib_hist: pd.DataFrame | N
     parts = []
     if ib_hist is not None and not ib_hist.empty and "iv" in ib_hist.columns:
         s = ib_hist.dropna(subset=["iv"])
-        parts.append(pd.Series(s["iv"].astype(float).values, index=pd.to_datetime(s["dt"])))
+        dcol = "dt" if "dt" in s.columns else "date"          # provider payload says `date`, the DB table says `dt`
+        parts.append(pd.Series(s["iv"].astype(float).values, index=pd.to_datetime(s[dcol])))
     if surface_hist is not None and not surface_hist.empty and "atm_iv_30" in surface_hist.columns:
         s = surface_hist.dropna(subset=["atm_iv_30"])
-        parts.append(pd.Series(s["atm_iv_30"].astype(float).values, index=pd.to_datetime(s["dt"])))
+        dcol = "dt" if "dt" in s.columns else "date"
+        parts.append(pd.Series(s["atm_iv_30"].astype(float).values, index=pd.to_datetime(s[dcol])))
     if not parts:
         return pd.Series(dtype=float)
     out = pd.concat(parts)
